@@ -99,7 +99,25 @@ export function Waveform(props: WaveformProps) {
     });
 
     const url = new URL(api.audioStreamUrl(audio.id), window.location.href).href;
+    // wavesurfer imposta la sorgente del media element se la trova diversa: si
+    // aspetta che il controller abbia caricato questa traccia, altrimenti durante
+    // un cambio di versione la sostituirebbe (perdendo posizione e riproduzione).
+    const media = controller.audio;
+    let detach = () => undefined as void;
+    const mediaReady = () =>
+      new Promise<void>((resolve) => {
+        if (media.currentSrc === url && media.readyState >= HTMLMediaElement.HAVE_METADATA) return resolve();
+        const onLoaded = () => {
+          if (media.currentSrc !== url) return;
+          detach();
+          resolve();
+        };
+        media.addEventListener('loadedmetadata', onLoaded);
+        detach = () => media.removeEventListener('loadedmetadata', onLoaded);
+      });
     const load = async () => {
+      await mediaReady();
+      if (cancelled) return;
       if (audio.hasPeaks) {
         try {
           const cached = await api.getPeaks(audio.id);
@@ -116,6 +134,7 @@ export function Waveform(props: WaveformProps) {
 
     return () => {
       cancelled = true;
+      detach();
       ws.destroy();
       wsRef.current = null;
       regionsRef.current = null;

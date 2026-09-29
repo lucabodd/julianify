@@ -7,7 +7,8 @@ import { ConfirmDialog, Modal } from '../components/Modal';
 import { notify, notifyError } from '../components/toast';
 
 export function AdminPage() {
-  const { user: me } = useSession();
+  const { user: me, info } = useSession();
+  const worker = info?.worker;
   const [users, setUsers] = useState<User[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
@@ -94,6 +95,30 @@ export function AdminPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      <h2 className="admin-subtitle">Worker di calcolo</h2>
+      {worker ? (
+        <p className={worker.status === 'ready' ? 'muted' : 'notice'}>
+          {worker.status === 'ready' && (
+            <>
+              <span className="badge success">attivo</span> Separazione degli strumenti: {worker.stems ? 'sì' : 'no'} ·
+              sincronizzazione automatica: {worker.autosync ? 'sì' : 'no'} · {worker.threads ?? '?'} thread su{' '}
+              {worker.device === 'cuda' ? 'GPU' : 'CPU'}.
+            </>
+          )}
+          {worker.status === 'detecting' && 'Verifica del worker Python in corso…'}
+          {(worker.status === 'unavailable' || worker.status === 'disabled') && (
+            <>
+              <span className="badge">non attivo</span> Senza il worker Python non sono disponibili la separazione degli
+              strumenti (Demucs) e la sincronizzazione automatica. Per attivarlo reinstalla con <code>WITH_WORKER=1</code>{' '}
+              (vedi README).
+            </>
+          )}
+          {worker.message && <span className="small"> {worker.message}</span>}
+        </p>
+      ) : (
+        <p className="muted">Stato non disponibile.</p>
       )}
       {creating && (
         <CreateUserDialog

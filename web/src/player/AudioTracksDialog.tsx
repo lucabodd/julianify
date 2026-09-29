@@ -1,35 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
-import { AUDIO_EXTENSIONS, type AudioTrack, type LibraryEntry, type ScoreDetail } from '../../../shared/types';
+import {
+  AUDIO_EXTENSIONS,
+  AUDIO_VARIANT_ORDER,
+  AUDIO_VARIANTS,
+  type AudioTrack,
+  type AudioVariant,
+  type LibraryEntry,
+  type ScoreDetail,
+} from '../../../shared/types';
 import { api } from '../api';
 import { useSession } from '../App';
 import { Icon } from '../components/Icon';
 import { ConfirmDialog, Modal } from '../components/Modal';
 import { notify, notifyError } from '../components/toast';
 import { formatTime } from './format';
+import { JobProgress } from './JobProgress';
+import { isJobActive, type JobsState } from './useJobs';
 
 interface Props {
   score: ScoreDetail;
   activeAudioId: number | null;
+  jobs: JobsState;
   onClose: () => void;
   onChanged: (tracks: AudioTrack[], select?: number) => void;
 }
 
-/** Gestione delle tracce audio dello spartito: caricamento, libreria musicale, nomi. */
-export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: Props) {
+const DEFAULT_VARIANTS: AudioVariant[] = ['no_guitar', 'guitar'];
+
+export function variantOrder(track: AudioTrack): number {
+  return track.variant ? AUDIO_VARIANT_ORDER.indexOf(track.variant) : -1;
+}
+
+/**
+ * Gestione delle tracce audio dello spartito: caricamento, libreria musicale,
+ * nomi e separazione degli strumenti (versioni senza chitarra, solo chitarra…).
+ */
+export function AudioTracksDialog({ score, activeAudioId, jobs, onClose, onChanged }: Props) {
   const { info } = useSession();
-  const [tracks, setTracks] = useState(score.audioTracks);
+  const tracks = score.audioTracks;
   const [uploading, setUploading] = useState<number | null>(null);
   const [browsing, setBrowsing] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [deleting, setDeleting] = useState<AudioTrack | null>(null);
+  const [separating, setSeparating] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const canEdit = score.isOwner;
+  const worker = info?.worker ?? null;
 
-  const apply = (next: AudioTrack[], select?: number) => {
-    setTracks(next);
-    onChanged(next, select);
-  };
+  const apply = (next: AudioTrack[], select?: number) => onChanged(next, select);
+  const originals = tracks.filter((t) => t.parentId === null);
+  const variantsOf = (id: number) => tracks.filter((t) => t.parentId === id).sort((a, b) => variantOrder(a) - variantOrder(b));
+  const stemsJob = (id: number) => jobs.jobs.find((j) => j.kind === 'stems' && j.audioId === id) ?? null;
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -53,11 +75,14 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
     <>
       <Modal title="Tracce audio" onClose={onClose} wide>
         <p className="muted small">
-          Ogni traccia (es. versione in studio, live, backing track) ha i propri sync point. Formati: {AUDIO_EXTENSIONS.join(', ')}.
+          Ogni registrazione (es. versione in studio, live) ha i propri sync point; le versioni separate (senza chitarra, solo
+          chitarra…) usano quelli della registrazione da cui derivano. Formati: {AUDIO_EXTENSIONS.join(', ')}.
         </p>
         <ul className="audio-list">
-          {tracks.map((t) => (
-            <li key={t.id} className={t.id === activeAudioId ? 'active' : ''}>
+          {originals.flatMap((original) => {
+            const job = stemsJob(original.id);
+            const rows = [original, ...variantsOf(original.id)].map((t) => (
+            <li key={t.id} className={`${t.id === activeAudioId ? 'active' : ''}${t.parentId !== null ? ' variant' : ''}`}>
               {editing === t.id ? (
                 <form
                   className="field-row grow"
@@ -77,11 +102,13 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
                 </form>
               ) : (
                 <button className="audio-main" onClick={() => onChanged(tracks, t.id)}>
-                  <Icon name={t.source === 'library' ? 'folder' : 'music'} />
+                  <Icon name={t.parentId !== null ? 'wave' : t.source === 'library' ? 'folder' : 'music'} />
                   <span>
                     <strong>{t.name}</strong>
                     <span className="muted small">
-                      {t.source === 'library' ? t.libraryPath : 'caricata'} · {t.syncPoints.length} sync point
+                      {t.parentId !== null
+                        ? `${t.variant ? AUDIO_VARIANTS[t.variant].description || 'versione separata' : 'versione separata'} · sync point dell'originale`
+                        : `${t.source === 'library' ? t.libraryPath : 'caricata'} · ${t.syncPoints.length} sync point`}
                       {t.durationMs ? ` · ${formatTime(t.durationMs, 0)}` : ''}
                     </span>
                   </span>
@@ -89,6 +116,16 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
               )}
               {canEdit && editing !== t.id && (
                 <>
+                  {t.parentId === null && worker?.stems && (
+                    <button
+                      className={`icon-button${separating === t.id ? ' active' : ''}`}
+                      title="Separa gli strumenti (basi senza chitarra, chitarra isolata…)"
+                      onClick={() => setSeparating(separating === t.id ? null : t.id)}
+                      disabled={!!job && isJobActive(job)}
+                    >
+                      <Icon name="layers" size={15} />
+                    </button>
+                  )}
                   <button
                     className="icon-button"
                     title="Rinomina"
@@ -105,9 +142,46 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
                 </>
               )}
             </li>
-          ))}
+            ));
+            if (job && isJobActive(job)) {
+              rows.push(
+                <li key={`job-${job.id}`} className="variant job-row">
+                  <JobProgress job={job} onCancel={() => void jobs.cancel(job.id)} />
+                </li>,
+              );
+            } else if (job?.status === 'error') {
+              rows.push(
+                <li key={`job-${job.id}`} className="variant">
+                  <span className="notice error grow">Separazione non riuscita: {job.error}</span>
+                  <button className="link" onClick={() => void jobs.dismiss(job.id)}>
+                    Chiudi
+                  </button>
+                </li>,
+              );
+            }
+            if (separating === original.id && !(job && isJobActive(job))) {
+              rows.push(
+                <li key={`stems-${original.id}`} className="variant">
+                  <StemsForm
+                    existing={variantsOf(original.id).map((v) => v.variant).filter((v): v is AudioVariant => v !== null)}
+                    message={worker?.message ?? null}
+                    onStart={async (variants) => {
+                      if (await jobs.startStems(original.id, variants)) setSeparating(null);
+                    }}
+                    onCancel={() => setSeparating(null)}
+                  />
+                </li>,
+              );
+            }
+            return rows;
+          })}
           {tracks.length === 0 && <li className="muted">Nessuna traccia audio.</li>}
         </ul>
+        {canEdit && worker && !worker.stems && worker.status !== 'detecting' && tracks.length > 0 && (
+          <p className="muted small">
+            Separazione degli strumenti non disponibile: {worker.message ?? 'worker Python non installato'}.
+          </p>
+        )}
         {canEdit ? (
           <div className="field-row">
             <button className="primary" onClick={() => fileInput.current?.click()} disabled={uploading !== null}>
@@ -152,14 +226,21 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
       {deleting && (
         <ConfirmDialog
           title="Eliminare la traccia audio?"
-          message={`“${deleting.name}” e i suoi sync point verranno eliminati${deleting.source === 'library' ? ' (il file nella libreria musicale non viene toccato)' : ''}.`}
+          message={
+            deleting.parentId !== null
+              ? `“${deleting.name}” verrà eliminata (la registrazione originale resta).`
+              : `“${deleting.name}” e i suoi sync point verranno eliminati` +
+                (variantsOf(deleting.id).length > 0 ? `, insieme alle ${variantsOf(deleting.id).length} versioni separate` : '') +
+                (deleting.source === 'library' ? ' (il file nella libreria musicale non viene toccato)' : '') +
+                '.'
+          }
           confirmLabel="Elimina"
           danger
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             try {
               await api.deleteAudio(deleting.id);
-              apply(tracks.filter((t) => t.id !== deleting.id));
+              apply(tracks.filter((t) => t.id !== deleting.id && t.parentId !== deleting.id));
             } catch (err) {
               notifyError(err);
             }
@@ -167,6 +248,65 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
         />
       )}
     </>
+  );
+}
+
+function StemsForm({
+  existing,
+  message,
+  onStart,
+  onCancel,
+}: {
+  existing: AudioVariant[];
+  message: string | null;
+  onStart: (variants: AudioVariant[]) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [chosen, setChosen] = useState<AudioVariant[]>(DEFAULT_VARIANTS.filter((v) => !existing.includes(v)));
+  const [busy, setBusy] = useState(false);
+  const toggle = (v: AudioVariant) => setChosen((list) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]));
+  return (
+    <div className="stems-form">
+      <strong className="small">Versioni da creare</strong>
+      <div className="stems-options">
+        {AUDIO_VARIANT_ORDER.map((v) => (
+          <label key={v} className="checkbox small" title={AUDIO_VARIANTS[v].description}>
+            <input
+              type="checkbox"
+              checked={existing.includes(v) || chosen.includes(v)}
+              disabled={existing.includes(v) || busy}
+              onChange={() => toggle(v)}
+            />
+            {AUDIO_VARIANTS[v].label}
+            {existing.includes(v) && <span className="muted"> (già presente)</span>}
+          </label>
+        ))}
+      </div>
+      <p className="muted small">
+        Separazione con Demucs (6 strumenti): richiede qualche minuto, circa metà della durata del brano su 4 core. Le versioni
+        restano sincronizzate con l'originale.
+        {message && ` ${message}`}
+      </p>
+      <div className="field-row">
+        <button
+          className="primary"
+          disabled={chosen.length === 0 || busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onStart(chosen);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <Icon name="layers" /> Separa
+        </button>
+        <button onClick={onCancel} disabled={busy}>
+          Annulla
+        </button>
+      </div>
+    </div>
   );
 }
 

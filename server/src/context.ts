@@ -1,6 +1,7 @@
 import type { LoginRateLimiter, SessionStore } from './auth.js';
 import type { Config } from './config.js';
 import type { Database } from './db.js';
+import type { JobRunner } from './jobs.js';
 import type { MusicLibrary } from './library.js';
 import type { Storage } from './storage.js';
 
@@ -11,5 +12,6 @@ export interface AppContext {
   sessions: SessionStore;
   loginLimiter: LoginRateLimiter;
   library: MusicLibrary | null;
+  jobs: JobRunner;
   version: string;
 }

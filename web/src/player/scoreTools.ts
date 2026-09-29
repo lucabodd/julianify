@@ -47,7 +47,7 @@ export function beatsPerBar(masterBar: alphaTab.model.MasterBar): number {
   return num;
 }
 
-function isPercussionTrack(track: alphaTab.model.Track): boolean {
+export function isPercussionTrack(track: alphaTab.model.Track): boolean {
   return track.isPercussion || track.staves.every((s) => s.isPercussion);
 }
 

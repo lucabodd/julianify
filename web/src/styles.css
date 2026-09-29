@@ -1404,3 +1404,127 @@ progress {
   background: rgba(229, 83, 75, 0.08);
   pointer-events: auto;
 }
+
+/* ------------------------------------------------ lavori del worker Python */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid rgba(232, 176, 75, 0.25);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+.job-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 0;
+}
+.job-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.job-progress-row .small:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  border-color: rgba(232, 176, 75, 0.45);
+  color: var(--accent);
+  background: rgba(232, 176, 75, 0.08);
+}
+.notice.error {
+  background: rgba(229, 83, 75, 0.1);
+  border-color: rgba(229, 83, 75, 0.4);
+}
+.badge.warn {
+  color: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.icon-button.active {
+  color: var(--accent);
+  background: rgba(232, 176, 75, 0.12);
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* sincronizzazione automatica */
+.autosync .form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin: 8px 0;
+}
+.autosync > button.primary {
+  margin-top: 8px;
+}
+.autosync-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(108, 192, 112, 0.35);
+  background: rgba(108, 192, 112, 0.06);
+}
+.autosync-result p {
+  margin: 0;
+}
+
+/* versioni separate nella finestra delle tracce */
+.audio-list li.variant {
+  margin-left: 26px;
+  padding-left: 4px;
+  border-left: 2px solid var(--line);
+  border-radius: 0 6px 6px 0;
+}
+.audio-list li.job-row:hover {
+  background: transparent;
+}
+.stems-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 4px;
+}
+.stems-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 4px 12px;
+}
+
+/* scelta della versione nella barra di trasporto */
+.transport-group.versions {
+  gap: 4px;
+}
+.transport-group.versions button {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+.admin-subtitle {
+  margin: 28px 0 8px;
+  font-size: 16px;
+}

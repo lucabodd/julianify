@@ -66,7 +66,7 @@ describe('API Julianify', () => {
     fs.writeFileSync(path.join(musicDir, 'Artista', 'Album', '01 - Canzone Già Nota.mp3'), Buffer.alloc(4096, 1));
     fs.writeFileSync(path.join(musicDir, 'Artista', 'Album', 'cover.jpg'), Buffer.alloc(10));
     fs.writeFileSync(path.join(tmp, 'segreto.mp3'), Buffer.alloc(10));
-    const config = loadConfig({ dataDir: path.join(tmp, 'data'), musicDir, webDir: path.join(tmp, 'noweb') });
+    const config = loadConfig({ dataDir: path.join(tmp, 'data'), musicDir, webDir: path.join(tmp, 'noweb'), workerPython: null });
     ({ app, ctx } = await buildApp(config, { logger: false }));
     await createUser(ctx.db, { username: 'luca', password: 'password-luca', isAdmin: true });
     await createUser(ctx.db, { username: 'mario', password: 'password-mario' });

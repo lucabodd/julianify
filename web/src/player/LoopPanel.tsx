@@ -184,7 +184,7 @@ export function LoopPanel({ snap, timeline, loops, trainer, gapMs, onGapChange, 
       </section>
       <p className="muted small">
         Suggerimento: <kbd>Spazio</kbd> play/pausa · <kbd>L</kbd> loop · <kbd>−</kbd>/<kbd>+</kbd> velocità · <kbd>←</kbd>/<kbd>→</kbd>{' '}
-        battuta precedente/successiva
+        battuta precedente/successiva · <kbd>V</kbd> originale / senza chitarra / solo chitarra (se create)
       </p>
     </div>
   );

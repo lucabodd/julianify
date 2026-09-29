@@ -95,6 +95,8 @@ export class PlayerController {
    */
   latencyMs = 0;
   private gapTimer = 0;
+  /** Invalida i ripristini di posizione in sospeso quando cambia la sorgente audio. */
+  private switchToken = 0;
 
   constructor(host: HTMLElement, scrollElement: HTMLElement) {
     this.audio = new Audio();
@@ -412,7 +414,29 @@ export class PlayerController {
     if (tracks.length > 0) this.api.renderTracks(tracks);
   }
 
+  /**
+   * Passa a un'altra versione della stessa registrazione (es. senza chitarra)
+   * restando nello stesso punto e continuando a suonare se stava suonando.
+   */
+  switchAudio(url: string): void {
+    const time = this.audio.currentTime;
+    const resume = !this.audio.paused;
+    this.setAudio(url);
+    const token = this.switchToken;
+    this.audio.addEventListener(
+      'loadedmetadata',
+      () => {
+        if (token !== this.switchToken || this.destroyed) return;
+        this.audio.currentTime = Math.min(time, this.audio.duration || time);
+        this.pushPosition();
+        if (resume) this.play();
+      },
+      { once: true },
+    );
+  }
+
   setAudio(url: string | null): void {
+    this.switchToken++;
     this.pause();
     this.update({ audioReady: false, audioDurationMs: 0, audioTimeMs: 0, error: null });
     if (url) {

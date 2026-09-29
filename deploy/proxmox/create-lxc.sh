@@ -7,6 +7,8 @@
 # variabili d'ambiente, per esempio:
 #   CTID=120 IP=192.168.1.50/24 GW=192.168.1.1 MUSIC_DIR=/mnt/data/music \
 #   ADMIN_USER=luca ./deploy/proxmox/create-lxc.sh
+# Con WITH_WORKER=1 (default) installa anche il worker Python per la separazione
+# degli strumenti e la sincronizzazione automatica: servono più RAM e disco.
 set -euo pipefail
 
 CTID=${CTID:-$(pvesh get /cluster/nextid)}
@@ -16,9 +18,16 @@ TEMPLATE_STORAGE=${TEMPLATE_STORAGE:-local}
 BRIDGE=${BRIDGE:-vmbr0}
 IP=${IP:-dhcp}                          # es. 192.168.1.50/24 (con GW) oppure dhcp
 GW=${GW:-}
-DISK_GB=${DISK_GB:-8}                   # spartiti e audio caricati stanno qui
-MEMORY=${MEMORY:-1024}
-CORES=${CORES:-2}
+WITH_WORKER=${WITH_WORKER:-1}
+if [ "$WITH_WORKER" = 1 ]; then
+  DISK_GB=${DISK_GB:-16}                # PyTorch + modello + versioni separate (FLAC)
+  MEMORY=${MEMORY:-4096}                # Demucs usa circa 2 GB durante la separazione
+  CORES=${CORES:-4}                     # più core = separazione più veloce
+else
+  DISK_GB=${DISK_GB:-8}                 # spartiti e audio caricati stanno qui
+  MEMORY=${MEMORY:-1024}
+  CORES=${CORES:-2}
+fi
 MUSIC_DIR=${MUSIC_DIR:-/mnt/data/music} # libreria musicale sull'host (facoltativa)
 ADMIN_USER=${ADMIN_USER:-}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-}      # se vuota la password viene chiesta durante l'installazione
@@ -70,13 +79,15 @@ done
 log "Copio il codice nel container"
 TMP=$(mktemp /tmp/julianify-src.XXXXXX.tar.gz)
 tar -C "$REPO_DIR" --exclude=./node_modules --exclude=./dist --exclude=./data --exclude=./.git \
-  --exclude=./web/public/font --exclude=./web/public/soundfont -czf "$TMP" .
+  --exclude=./web/public/font --exclude=./web/public/soundfont --exclude=./worker/.venv \
+  --exclude='__pycache__' -czf "$TMP" .
 pct push "$CTID" "$TMP" /root/julianify-src.tar.gz
 rm -f "$TMP"
 pct exec "$CTID" -- sh -c 'rm -rf /root/julianify-src && mkdir -p /root/julianify-src && tar -xzf /root/julianify-src.tar.gz -C /root/julianify-src && rm /root/julianify-src.tar.gz'
 
 log "Installo Julianify nel container"
-pct exec "$CTID" -- env ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" bash /root/julianify-src/deploy/proxmox/install.sh
+pct exec "$CTID" -- env ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" WITH_WORKER="$WITH_WORKER" \
+  bash /root/julianify-src/deploy/proxmox/install.sh
 
 IP_CT=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
 log "Fatto! Apri http://${IP_CT}:8080"

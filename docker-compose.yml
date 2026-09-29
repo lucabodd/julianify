@@ -3,6 +3,8 @@
 # poi apri http://<ip-del-server>:8080
 services:
   julianify:
+    # Immagine completa (con separazione degli strumenti e sincronizzazione
+    # automatica). Per quella leggera:  build: { context: ., target: slim }
     build: .
     container_name: julianify
     restart: unless-stopped

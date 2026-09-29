@@ -2,10 +2,12 @@ import fsp from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import { isAudioFile, type FlatSyncPoint } from '../../../shared/types.js';
 import {
-  deleteAudioFiles,
+  audioTrackOf,
+  deleteAudio,
   getOwnedAudio,
   getOwnedScore,
   getVisibleAudio,
+  syncOwner,
   toAudioTrack,
   touchScore,
   type AudioRow,
@@ -107,29 +109,26 @@ export function registerAudioRoutes(app: FastifyInstance, ctx: AppContext): void
     const syncPoints = data.syncPoints === undefined ? undefined : sanitizeSyncPoints(data.syncPoints);
     const durationMs =
       data.durationMs === undefined ? undefined : Math.round(finiteNumber(data.durationMs, 'durationMs', 0, 86_400_000));
+    const now = new Date().toISOString();
     ctx.db.run(
-      `UPDATE audio_tracks SET name = ?, sync_points = ?, duration_ms = ?, updated_at = ? WHERE id = ?`,
+      'UPDATE audio_tracks SET name = ?, duration_ms = ?, updated_at = ? WHERE id = ?',
       name ?? audio.name,
-      syncPoints ? JSON.stringify(syncPoints) : audio.sync_points,
       durationMs ?? audio.duration_ms,
-      new Date().toISOString(),
+      now,
       audio.id,
     );
-    if (syncPoints) touchScore(ctx, score.id);
-    return { audio: toAudioTrack(getAudio(ctx, audio.id)) };
+    if (syncPoints) {
+      // le versioni separate condividono i sync point della registrazione originale
+      ctx.db.run('UPDATE audio_tracks SET sync_points = ?, updated_at = ? WHERE id = ?', JSON.stringify(syncPoints), now, syncOwner(ctx, audio).id);
+      touchScore(ctx, score.id);
+    }
+    return { audio: audioTrackOf(ctx, getAudio(ctx, audio.id)) };
   });
 
   app.delete('/api/audio/:id', async (request) => {
     const user = requireUser(request);
     const { audio, score } = getOwnedAudio(ctx, user, parseId((request.params as { id: string }).id));
-    ctx.db.run('DELETE FROM audio_tracks WHERE id = ?', audio.id);
-    await deleteAudioFiles(ctx, audio);
-    ctx.db.run(
-      `UPDATE score_prefs SET prefs = json_remove(prefs, '$.audioId')
-       WHERE score_id = ? AND json_extract(prefs, '$.audioId') = ?`,
-      score.id,
-      audio.id,
-    );
+    await deleteAudio(ctx, audio);
     touchScore(ctx, score.id);
     return { ok: true };
   });

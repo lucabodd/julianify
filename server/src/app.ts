@@ -9,9 +9,11 @@ import { dataPaths, type Config } from './config.js';
 import type { AppContext } from './context.js';
 import { Database } from './db.js';
 import { HttpError } from './http.js';
+import { JobRunner } from './jobs.js';
 import { MusicLibrary } from './library.js';
 import { registerAudioRoutes } from './routes/audio.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerJobRoutes } from './routes/jobs.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import { registerNotesRoutes } from './routes/notes.js';
 import { registerScoreRoutes } from './routes/scores.js';
@@ -50,7 +52,10 @@ export function readVersion(): string {
   return 'dev';
 }
 
-export async function buildApp(config: Config, options: { logger?: boolean } = {}): Promise<{ app: FastifyInstance; ctx: AppContext }> {
+export async function buildApp(
+  config: Config,
+  options: { logger?: boolean; detectWorker?: boolean } = {},
+): Promise<{ app: FastifyInstance; ctx: AppContext }> {
   const paths = dataPaths(config);
   const db = new Database(paths.dbFile);
   const storage = new Storage(paths);
@@ -75,6 +80,12 @@ export async function buildApp(config: Config, options: { logger?: boolean } = {
     else library = new MusicLibrary(config.musicDir);
   }
 
+  const app = Fastify({
+    logger: options.logger === false ? false : { level: config.logLevel },
+    trustProxy: config.trustProxy,
+    bodyLimit: 2 * 1024 * 1024,
+  });
+
   const ctx: AppContext = {
     config,
     db,
@@ -82,14 +93,15 @@ export async function buildApp(config: Config, options: { logger?: boolean } = {
     sessions: new SessionStore(db, config.sessionDays),
     loginLimiter: new LoginRateLimiter(),
     library,
+    jobs: new JobRunner(db, config, paths, {
+      info: (message) => app.log.info(message),
+      warn: (message) => app.log.warn(message),
+    }),
     version: readVersion(),
   };
-
-  const app = Fastify({
-    logger: options.logger === false ? false : { level: config.logLevel },
-    trustProxy: config.trustProxy,
-    bodyLimit: 2 * 1024 * 1024,
-  });
+  // Il worker Python si avvia in parallelo: l'app risponde subito, le funzioni
+  // che lo richiedono diventano disponibili quando la verifica è terminata.
+  if (options.detectWorker !== false) void ctx.jobs.detect();
 
   await app.register(fastifyCookie);
   await app.register(fastifyMultipart, {
@@ -171,11 +183,13 @@ export async function buildApp(config: Config, options: { logger?: boolean } = {
   registerAudioRoutes(app, ctx);
   registerNotesRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);
+  registerJobRoutes(app, ctx);
 
   const purgeTimer = setInterval(() => ctx.sessions.purgeExpired(), 6 * 3600 * 1000);
   purgeTimer.unref();
   app.addHook('onClose', async () => {
     clearInterval(purgeTimer);
+    await ctx.jobs.close();
     db.close();
   });
 

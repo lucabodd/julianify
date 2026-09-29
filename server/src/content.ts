@@ -1,8 +1,9 @@
 import fsp from 'node:fs/promises';
-import type { AudioTrack, FlatSyncPoint, ScoreDetail, ScoreSummary } from '../../shared/types.js';
+import path from 'node:path';
+import { isAudioVariant, type AudioTrack, type FlatSyncPoint, type ScoreDetail, type ScoreSummary } from '../../shared/types.js';
 import type { UserRow } from './auth.js';
 import type { AppContext } from './context.js';
-import { forbidden, notFound } from './http.js';
+import { HttpError, forbidden, notFound } from './http.js';
 
 export interface ScoreRow {
   id: number;
@@ -34,13 +35,15 @@ export interface AudioRow {
   duration_ms: number | null;
   sync_points: string;
   has_peaks: number;
+  parent_id: number | null;
+  variant: string | null;
   created_at: string;
   updated_at: string;
 }
 
 const SCORE_SELECT = `
   SELECT s.*, u.username AS owner_name,
-    (SELECT COUNT(*) FROM audio_tracks a WHERE a.score_id = s.id) AS audio_count
+    (SELECT COUNT(*) FROM audio_tracks a WHERE a.score_id = s.id AND a.parent_id IS NULL) AS audio_count
   FROM scores s JOIN users u ON u.id = s.owner_id`;
 
 export function toScoreSummary(row: ScoreRow, user: UserRow): ScoreSummary {
@@ -71,7 +74,11 @@ export function parseSyncPoints(json: string): FlatSyncPoint[] {
   }
 }
 
-export function toAudioTrack(row: AudioRow): AudioTrack {
+/**
+ * @param syncSource riga da cui leggere i sync point: per le versioni separate
+ *   è la registrazione originale, con cui li condividono.
+ */
+export function toAudioTrack(row: AudioRow, syncSource: AudioRow = row): AudioTrack {
   return {
     id: row.id,
     scoreId: row.score_id,
@@ -81,8 +88,10 @@ export function toAudioTrack(row: AudioRow): AudioTrack {
     mime: row.mime,
     fileSize: row.file_size,
     durationMs: row.duration_ms,
-    syncPoints: parseSyncPoints(row.sync_points),
+    syncPoints: parseSyncPoints(syncSource.sync_points),
     hasPeaks: row.has_peaks === 1,
+    parentId: row.parent_id,
+    variant: isAudioVariant(row.variant) ? row.variant : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -113,7 +122,31 @@ export function getOwnedScore(ctx: AppContext, user: UserRow, scoreId: number): 
 export function getScoreDetail(ctx: AppContext, user: UserRow, scoreId: number): ScoreDetail {
   const row = getVisibleScore(ctx, user, scoreId);
   const audio = ctx.db.all<AudioRow>('SELECT * FROM audio_tracks WHERE score_id = ? ORDER BY created_at, id', scoreId);
-  return { ...toScoreSummary(row, user), audioTracks: audio.map(toAudioTrack) };
+  const byId = new Map(audio.map((a) => [a.id, a]));
+  return {
+    ...toScoreSummary(row, user),
+    audioTracks: audio.map((a) => toAudioTrack(a, (a.parent_id !== null && byId.get(a.parent_id)) || a)),
+  };
+}
+
+export function getAudioRow(ctx: AppContext, audioId: number): AudioRow | undefined {
+  return ctx.db.get<AudioRow>('SELECT * FROM audio_tracks WHERE id = ?', audioId);
+}
+
+/** Traccia che custodisce i sync point: l'originale per le versioni separate. */
+export function syncOwner(ctx: AppContext, audio: AudioRow): AudioRow {
+  return (audio.parent_id !== null && getAudioRow(ctx, audio.parent_id)) || audio;
+}
+
+export function audioTrackOf(ctx: AppContext, audio: AudioRow): AudioTrack {
+  return toAudioTrack(audio, syncOwner(ctx, audio));
+}
+
+/** Percorso del file audio sul disco (caricato o nella libreria musicale). */
+export async function audioFilePath(ctx: AppContext, audio: AudioRow): Promise<string> {
+  if (audio.source === 'upload' && audio.file_name) return path.join(ctx.storage.paths.audioDir, audio.file_name);
+  if (!ctx.library || !audio.library_path) throw new HttpError(404, 'Libreria musicale non disponibile');
+  return (await ctx.library.statAudio(audio.library_path)).full;
 }
 
 export function getVisibleAudio(ctx: AppContext, user: UserRow, audioId: number): { audio: AudioRow; score: ScoreRow } {
@@ -138,8 +171,25 @@ export async function deleteAudioFiles(ctx: AppContext, audio: AudioRow): Promis
   await fsp.rm(ctx.storage.peaksFile(audio.id), { force: true });
 }
 
+/** Elimina una traccia, le sue versioni separate e i relativi file. */
+export async function deleteAudio(ctx: AppContext, audio: AudioRow): Promise<void> {
+  const variants = ctx.db.all<AudioRow>('SELECT * FROM audio_tracks WHERE parent_id = ?', audio.id);
+  const all = [audio, ...variants];
+  ctx.jobs.cancelForAudio(all.map((a) => a.id));
+  ctx.db.run('DELETE FROM audio_tracks WHERE id = ?', audio.id);
+  for (const a of all) await deleteAudioFiles(ctx, a);
+  const ids = all.map((a) => a.id);
+  ctx.db.run(
+    `UPDATE score_prefs SET prefs = json_remove(prefs, '$.audioId')
+     WHERE score_id = ? AND json_extract(prefs, '$.audioId') IN (${ids.map(() => '?').join(', ')})`,
+    audio.score_id,
+    ...ids,
+  );
+}
+
 export async function deleteScore(ctx: AppContext, score: ScoreRow): Promise<void> {
   const audio = ctx.db.all<AudioRow>('SELECT * FROM audio_tracks WHERE score_id = ?', score.id);
+  ctx.jobs.cancelForAudio(audio.map((a) => a.id));
   ctx.db.run('DELETE FROM scores WHERE id = ?', score.id);
   await ctx.storage.remove(ctx.storage.paths.scoresDir, score.file_name);
   for (const a of audio) await deleteAudioFiles(ctx, a);

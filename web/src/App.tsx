@@ -44,6 +44,14 @@ export function App() {
     if (user) api.info().then(setInfo, () => setInfo(null));
   }, [user]);
 
+  // Il worker Python viene verificato all'avvio del server: finché la verifica
+  // è in corso si richiede di nuovo lo stato.
+  useEffect(() => {
+    if (!user || info?.worker?.status !== 'detecting') return;
+    const timer = window.setTimeout(() => api.info().then(setInfo, () => undefined), 3000);
+    return () => window.clearTimeout(timer);
+  }, [user, info]);
+
   const logout = useCallback(async () => {
     await api.logout().catch(() => undefined);
     setUser(null);

@@ -103,6 +103,31 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, score_id)
   );
   `,
+  // 2: versioni separate delle registrazioni (Demucs) e lavori del worker Python
+  `
+  ALTER TABLE audio_tracks ADD COLUMN parent_id INTEGER REFERENCES audio_tracks(id) ON DELETE CASCADE;
+  ALTER TABLE audio_tracks ADD COLUMN variant TEXT;
+  CREATE INDEX audio_tracks_parent ON audio_tracks(parent_id);
+
+  CREATE TABLE jobs (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('stems', 'autosync')),
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    score_id INTEGER REFERENCES scores(id) ON DELETE CASCADE,
+    audio_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'error', 'canceled')),
+    progress REAL NOT NULL DEFAULT 0,
+    message TEXT,
+    params TEXT NOT NULL DEFAULT '{}',
+    result TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    started_at TEXT,
+    finished_at TEXT
+  );
+  CREATE INDEX jobs_score_user ON jobs(score_id, user_id);
+  CREATE INDEX jobs_status ON jobs(status);
+  `,
 ];
 
 export class Database {

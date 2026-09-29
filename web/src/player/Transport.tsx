@@ -3,11 +3,21 @@ import type { PlayerController, PlayerSnapshot } from './controller';
 import { formatTime, percent } from './format';
 import type { Timeline } from './timeline';
 
+export interface AudioVersion {
+  id: number;
+  label: string;
+  title: string;
+}
+
 interface TransportProps {
   controller: PlayerController;
   snap: PlayerSnapshot;
   timeline: Timeline | null;
   hasAudio: boolean;
+  /** Versioni della registrazione (originale, senza chitarra…): si passa dall'una all'altra senza perdere il punto. */
+  versions: AudioVersion[];
+  activeVersion: number | null;
+  onVersion: (id: number) => void;
   onSetA: () => void;
   onSetB: () => void;
   onClearLoop: () => void;
@@ -15,7 +25,7 @@ interface TransportProps {
 
 const SPEED_PRESETS = [0.5, 0.6, 0.75, 0.9, 1];
 
-export function Transport({ controller, snap, timeline, hasAudio, onSetA, onSetB, onClearLoop }: TransportProps) {
+export function Transport({ controller, snap, timeline, hasAudio, versions, activeVersion, onVersion, onSetA, onSetB, onClearLoop }: TransportProps) {
   const bar = timeline?.barAtTick(snap.tick);
   const totalBars = controller.score?.masterBars.length ?? 0;
   const rangeBars =
@@ -107,6 +117,32 @@ export function Transport({ controller, snap, timeline, hasAudio, onSetA, onSetB
           </button>
         )}
       </div>
+
+      {versions.length > 1 && (
+        <div className="transport-group versions" role="group" aria-label="Versione della registrazione (tasto V)">
+          <Icon name="layers" />
+          {versions.length <= 3 ? (
+            versions.map((v) => (
+              <button
+                key={v.id}
+                className={v.id === activeVersion ? 'toggle active' : 'toggle'}
+                onClick={() => onVersion(v.id)}
+                title={`${v.title} (V per cambiare)`}
+              >
+                {v.label}
+              </button>
+            ))
+          ) : (
+            <select value={activeVersion ?? ''} onChange={(e) => onVersion(Number(e.target.value))} aria-label="Versione">
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       <div className="transport-group volume" title="Volume">
         <Icon name={snap.volume === 0 ? 'mute' : 'volume'} />

@@ -2,7 +2,10 @@ import type {
   Annotation,
   AnnotationInput,
   AudioTrack,
+  AudioVariant,
+  AutoSyncRequest,
   FlatSyncPoint,
+  Job,
   LibraryListing,
   SavedLoop,
   SavedLoopInput,
@@ -149,6 +152,14 @@ export const api = {
   updateLoop: (id: number, data: Partial<SavedLoopInput>) =>
     request<{ loop: SavedLoop }>('PATCH', `/api/loops/${id}`, data).then((r) => r.loop),
   deleteLoop: (id: number) => request<{ ok: boolean }>('DELETE', `/api/loops/${id}`),
+
+  startStems: (audioId: number, variants: AudioVariant[]) =>
+    request<{ job: Job }>('POST', `/api/audio/${audioId}/stems`, { variants }).then((r) => r.job),
+  startAutoSync: (audioId: number, data: AutoSyncRequest) =>
+    request<{ job: Job }>('POST', `/api/audio/${audioId}/autosync`, data).then((r) => r.job),
+  getJob: (id: number) => request<{ job: Job }>('GET', `/api/jobs/${id}`).then((r) => r.job),
+  listScoreJobs: (scoreId: number) => request<{ jobs: Job[] }>('GET', `/api/scores/${scoreId}/jobs`).then((r) => r.jobs),
+  deleteJob: (id: number) => request<{ ok: boolean }>('DELETE', `/api/jobs/${id}`),
 
   browseLibrary: (path: string) => request<LibraryListing>('GET', `/api/library/browse?path=${encodeURIComponent(path)}`),
   searchLibrary: (q: string) => request<LibraryListing>('GET', `/api/library/search?q=${encodeURIComponent(q)}`),

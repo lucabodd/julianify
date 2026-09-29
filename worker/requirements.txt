@@ -1,0 +1,14 @@
+# Worker Python di Julianify (Python >= 3.11, ffmpeg nel PATH).
+#
+# PyTorch va installato prima, dall'indice "cpu": la build predefinita include
+# CUDA e pesa diversi GB in più.
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+#   pip install -r requirements.txt
+#
+# Versioni provate: torch 2.14 (cpu), numpy 2.4, scipy 1.17, pandas 2.3,
+# librosa 0.11, numba 0.65, huggingface_hub 2.0.
+demucs==4.1.0
+synctoolbox==1.4.2
+numpy>=2.0,<3
+pandas>=2.2
+librosa>=0.10.2

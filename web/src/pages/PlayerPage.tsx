@@ -1,18 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { Annotation, AnnotationInput, AudioTrack, SavedLoop, ScoreDetail, ScorePrefs } from '../../../shared/types';
+import {
+  AUDIO_VARIANTS,
+  type Annotation,
+  type AnnotationInput,
+  type AudioTrack,
+  type Job,
+  type SavedLoop,
+  type ScoreDetail,
+  type ScorePrefs,
+} from '../../../shared/types';
 import { api } from '../api';
+import { useSession } from '../App';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Icon } from '../components/Icon';
 import { notify, notifyError } from '../components/toast';
 import { buildAnalysis } from '../player/analysis';
 import { AnalysisPanel, type EditingState } from '../player/AnalysisPanel';
 import { AnnotationLayer, layerPadding, type LayerOptions } from '../player/AnnotationLayer';
-import { AudioTracksDialog } from '../player/AudioTracksDialog';
+import { AudioTracksDialog, variantOrder } from '../player/AudioTracksDialog';
 import { PlayerController, type LayoutName, type PlaybackRange, type PlayerSnapshot, type StaveProfileName } from '../player/controller';
 import { LoopPanel } from '../player/LoopPanel';
 import { beatPosition, beatsPerBar, positionLabel, type ScorePosition } from '../player/scoreTools';
 import { SyncPanel } from '../player/SyncPanel';
-import { Transport } from '../player/Transport';
+import { Transport, type AudioVersion } from '../player/Transport';
+import { isJobActive, useJobs } from '../player/useJobs';
 import { useSpeedTrainer } from '../player/useSpeedTrainer';
 import { useSyncEditor } from '../player/useSyncEditor';
 import { Waveform } from '../player/Waveform';
@@ -67,6 +78,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function PlayerPage({ scoreId }: { scoreId: number }) {
+  const { info } = useSession();
   const [score, setScore] = useState<ScoreDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<ScorePrefs | null>(null);
@@ -94,7 +106,31 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
   const snap = useSyncExternalStore(controller?.subscribe ?? noopSubscribe, controller?.getSnapshot ?? emptySnapshot);
   const hideScoreChords = layers.chords && annotations.some((a) => a.kind === 'chord');
   const timeline = snap.timelineVersion > 0 ? (controller?.timeline ?? null) : null;
-  const activeAudio = score?.audioTracks.find((t) => t.id === audioId) ?? null;
+  const allTracks = score?.audioTracks;
+  const activeAudio = allTracks?.find((t) => t.id === audioId) ?? null;
+  // Le versioni separate (senza chitarra…) condividono i sync point della registrazione originale.
+  const syncTrack = (activeAudio?.parentId != null && allTracks?.find((t) => t.id === activeAudio.parentId)) || activeAudio;
+  const family = useMemo(
+    () =>
+      syncTrack && allTracks
+        ? [syncTrack, ...allTracks.filter((t) => t.parentId === syncTrack.id).sort((a, b) => variantOrder(a) - variantOrder(b))]
+        : [],
+    [syncTrack, allTracks],
+  );
+  const versions = useMemo<AudioVersion[]>(
+    () =>
+      family.map((t) => ({
+        id: t.id,
+        label: t.variant ? AUDIO_VARIANTS[t.variant].label : 'Originale',
+        title: t.variant ? AUDIO_VARIANTS[t.variant].description || AUDIO_VARIANTS[t.variant].label : 'Registrazione originale',
+      })),
+    [family],
+  );
+  const familyOf = useRef<(id: number | null) => number | null>(() => null);
+  familyOf.current = (id) => {
+    const track = allTracks?.find((t) => t.id === id);
+    return track ? (track.parentId ?? track.id) : null;
+  };
 
   // ------------------------------------------------------------ caricamento
   useEffect(() => {
@@ -167,8 +203,18 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controller, snap.scoreLoaded]);
 
+  // Tra versioni della stessa registrazione si cambia al volo, restando nello stesso punto.
+  const loadedFamily = useRef<number | null>(null);
   useEffect(() => {
-    controller?.setAudio(audioId ? api.audioStreamUrl(audioId) : null);
+    if (!controller) return;
+    const url = audioId ? api.audioStreamUrl(audioId) : null;
+    const familyId = familyOf.current(audioId);
+    if (url && familyId !== null && familyId === loadedFamily.current && controller.getSnapshot().audioReady) {
+      controller.switchAudio(url);
+    } else {
+      controller.setAudio(url);
+    }
+    loadedFamily.current = familyId;
   }, [controller, audioId]);
 
   useEffect(() => {
@@ -221,10 +267,43 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
 
   // ------------------------------------------------------------- sync point
   const onAudioSaved = useCallback((audio: AudioTrack) => {
-    setScore((s) => (s ? { ...s, audioTracks: s.audioTracks.map((t) => (t.id === audio.id ? audio : t)) } : s));
+    setScore((s) =>
+      s
+        ? {
+            ...s,
+            audioTracks: s.audioTracks.map((t) =>
+              t.id === audio.id ? audio : t.parentId === audio.id ? { ...t, syncPoints: audio.syncPoints } : t,
+            ),
+          }
+        : s,
+    );
   }, []);
-  const syncEditor = useSyncEditor(controller, activeAudio, score?.isOwner ?? false, snap.timelineVersion, onAudioSaved);
+  const syncEditor = useSyncEditor(controller, syncTrack, score?.isOwner ?? false, snap.timelineVersion, onAudioSaved);
   const trainer = useSpeedTrainer(controller);
+
+  // ------------------------------------------------ lavori del worker Python
+  const onJobFinished = useCallback(
+    (job: Job) => {
+      if (job.kind === 'stems') {
+        if (job.status === 'done') {
+          api.getScore(scoreId).then(
+            (fresh) => setScore((s) => (s ? { ...s, audioTracks: fresh.audioTracks, audioCount: fresh.audioCount } : fresh)),
+            notifyError,
+          );
+          notify('Versioni pronte: scegli «Senza chitarra» o le altre nella barra in alto (tasto V)', 'success');
+        } else if (job.status === 'error') {
+          notify(`Separazione non riuscita: ${job.error}`, 'error');
+        }
+      } else if (job.status === 'done') {
+        notify('Sincronizzazione calcolata: controllala e applicala dal pannello Sync', 'success');
+      } else if (job.status === 'error') {
+        notify(`Sincronizzazione non riuscita: ${job.error}`, 'error');
+      }
+    },
+    [scoreId],
+  );
+  const jobs = useJobs(scoreId, onJobFinished);
+  const activeJobs = jobs.jobs.filter(isJobActive);
 
   // --------------------------------------------------------------- analisi
   const model = useMemo(
@@ -502,6 +581,13 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
       case 'W':
         setShowWaveform((v) => !v);
         break;
+      case 'v':
+      case 'V':
+        if (versions.length > 1) {
+          const index = versions.findIndex((v) => v.id === audioId);
+          setAudioId(versions[(index + 1) % versions.length].id);
+        }
+        break;
       default:
         return;
     }
@@ -556,17 +642,19 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
           <div className="audio-select">
             <Icon name="music" />
             <select
-              value={audioId ?? ''}
+              value={syncTrack?.id ?? ''}
               onChange={(e) => setAudioId(e.target.value ? Number(e.target.value) : null)}
               aria-label="Traccia audio"
               disabled={!score || score.audioTracks.length === 0}
             >
               {score?.audioTracks.length === 0 && <option value="">Nessuna traccia audio</option>}
-              {score?.audioTracks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              {score?.audioTracks
+                .filter((t) => t.parentId === null)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
             </select>
             <button className="icon-button" title="Gestisci tracce audio" onClick={() => setAudioDialog(true)} disabled={!score}>
               <Icon name="settings" />
@@ -634,6 +722,18 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
             )}
           </div>
 
+          {activeJobs.length > 0 && (
+            <button
+              className="job-chip"
+              onClick={() => (activeJobs[0].kind === 'stems' ? setAudioDialog(true) : setPanel('sync'))}
+              title={activeJobs[0].message ?? 'Lavoro in corso sul server'}
+            >
+              <span className="spinner" aria-hidden />
+              {activeJobs[0].kind === 'stems' ? 'Separazione' : 'Sincronizzazione'}
+              {activeJobs[0].status === 'running' ? ` ${Math.round(activeJobs[0].progress * 100)}%` : ' in coda'}
+            </button>
+          )}
+
           <nav className="panel-tabs" aria-label="Pannelli">
             {(
               [
@@ -651,7 +751,18 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
       </header>
 
       {controller && (
-        <Transport controller={controller} snap={snap} timeline={timeline} hasAudio={!!activeAudio} onSetA={setA} onSetB={setB} onClearLoop={clearLoop} />
+        <Transport
+          controller={controller}
+          snap={snap}
+          timeline={timeline}
+          hasAudio={!!activeAudio}
+          versions={versions}
+          activeVersion={audioId}
+          onVersion={setAudioId}
+          onSetA={setA}
+          onSetB={setB}
+          onClearLoop={clearLoop}
+        />
       )}
 
       <div className="player-main">
@@ -760,7 +871,9 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
               <SyncPanel
                 controller={controller}
                 editor={syncEditor}
-                audio={activeAudio}
+                family={family}
+                worker={info?.worker ?? null}
+                jobs={jobs}
                 timeline={timeline}
                 selection={selection}
                 latencyMs={latency}
@@ -796,14 +909,17 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
         <AudioTracksDialog
           score={score}
           activeAudioId={audioId}
+          jobs={jobs}
           onClose={() => setAudioDialog(false)}
           onChanged={(tracks, select) => {
-            setScore({ ...score, audioTracks: tracks, audioCount: tracks.length });
+            setScore({ ...score, audioTracks: tracks, audioCount: tracks.filter((t) => t.parentId === null).length });
             if (select !== undefined) {
               setAudioId(select);
               setAudioDialog(false);
             } else if (!tracks.some((t) => t.id === audioId)) {
-              setAudioId(tracks[0]?.id ?? null);
+              // eliminata la traccia in ascolto: si torna all'originale, se c'è ancora
+              const parent = tracks.find((t) => t.id === activeAudio?.parentId);
+              setAudioId(parent?.id ?? tracks.find((t) => t.parentId === null)?.id ?? null);
             }
           }}
         />

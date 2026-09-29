@@ -1,18 +1,24 @@
 import { useState } from 'react';
-import type { AudioTrack } from '../../../shared/types';
+import type { AudioTrack, WorkerInfo } from '../../../shared/types';
 import { Icon } from '../components/Icon';
 import { ConfirmDialog } from '../components/Modal';
+import { pointKey } from './autosync';
+import { AutoSyncSection } from './AutoSyncSection';
 import type { PlayerController } from './controller';
 import { barName, formatTime } from './format';
 import type { ScorePosition } from './scoreTools';
 import { positionLabel } from './scoreTools';
 import type { Timeline } from './timeline';
+import type { JobsState } from './useJobs';
 import type { SyncEditor, TapStep } from './useSyncEditor';
 
 interface SyncPanelProps {
   controller: PlayerController;
   editor: SyncEditor;
-  audio: AudioTrack | null;
+  /** Registrazione originale seguita dalle sue versioni separate (condividono i sync point). */
+  family: AudioTrack[];
+  worker: WorkerInfo | null;
+  jobs: JobsState;
   timeline: Timeline | null;
   selection: ScorePosition | null;
   latencyMs: number;
@@ -28,11 +34,12 @@ const STEPS: Array<{ value: TapStep; label: string }> = [
 
 const SAVE_LABELS = { saved: 'Salvato', dirty: 'Modifiche in attesa…', saving: 'Salvataggio…', error: 'Errore di salvataggio' };
 
-export function SyncPanel({ controller, editor, audio, timeline, selection, latencyMs, onLatencyChange }: SyncPanelProps) {
+export function SyncPanel({ controller, editor, family, worker, jobs, timeline, selection, latencyMs, onLatencyChange }: SyncPanelProps) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [startOrder, setStartOrder] = useState<number | ''>('');
+  const [review, setReview] = useState<Set<string>>(new Set());
 
-  if (!audio) {
+  if (family.length === 0) {
     return (
       <div className="panel-body">
         <p className="muted">Aggiungi prima una traccia audio: i sync point collegano le battute dello spartito agli istanti della registrazione.</p>
@@ -65,6 +72,16 @@ export function SyncPanel({ controller, editor, audio, timeline, selection, late
           <button onClick={() => editor.replaceAll(controller.embedded.syncPoints)}>Importa</button>
         </div>
       )}
+
+      <AutoSyncSection
+        controller={controller}
+        editor={editor}
+        timeline={timeline}
+        family={family}
+        worker={worker}
+        jobs={jobs}
+        onApplied={setReview}
+      />
 
       <section className="panel-section">
         <h3>
@@ -169,6 +186,14 @@ export function SyncPanel({ controller, editor, audio, timeline, selection, late
                       {invalid.has(index) && (
                         <span className="badge danger" title="Ignorato: tempo non crescente o battuta inesistente">
                           !
+                        </span>
+                      )}
+                      {review.has(pointKey(p.barIndex, p.barOccurence, p.barPosition)) && (
+                        <span
+                          className="badge warn"
+                          title="Da controllare: qui il tempo cambia bruscamente o la registrazione somiglia poco allo spartito"
+                        >
+                          ?
                         </span>
                       )}
                     </td>

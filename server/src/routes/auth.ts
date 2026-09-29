@@ -72,6 +72,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       version: ctx.version,
       musicLibrary: ctx.library !== null,
       maxUploadMb: ctx.config.maxUploadMb,
+      worker: ctx.jobs.info,
     };
   });
 }

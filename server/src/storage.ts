@@ -14,9 +14,9 @@ export class Storage {
     for (const dir of [this.paths.scoresDir, this.paths.audioDir, this.paths.peaksDir, this.paths.tmpDir]) {
       await fsp.mkdir(dir, { recursive: true });
     }
-    // Pulisce eventuali upload interrotti.
+    // Pulisce upload interrotti e cartelle di lavori rimasti a metà.
     for (const entry of await fsp.readdir(this.paths.tmpDir)) {
-      await fsp.rm(path.join(this.paths.tmpDir, entry), { force: true });
+      await fsp.rm(path.join(this.paths.tmpDir, entry), { force: true, recursive: true });
     }
   }
 

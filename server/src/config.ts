@@ -37,6 +37,29 @@ export interface Config {
   adminUser: string | null;
   adminPassword: string | null;
   logLevel: string;
+  /** Interprete Python del worker (Demucs, Sync Toolbox); null = funzioni disattivate. */
+  workerPython: string | null;
+  /** Cartella che contiene il pacchetto `julianify_worker`. */
+  workerDir: string;
+  /** Durata massima di un lavoro del worker, in minuti. */
+  workerTimeoutMin: number;
+}
+
+/** Radice del progetto: `server/src` in sviluppo, `dist/server/src` dopo la build. */
+function appRoot(): string {
+  for (const up of ['../..', '../../..']) {
+    const dir = path.resolve(import.meta.dirname, up);
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+  }
+  return process.cwd();
+}
+
+function defaultWorkerPython(workerDir: string): string | null {
+  if (!envBool('JULIANIFY_WORKER', true)) return null;
+  const configured = process.env.JULIANIFY_WORKER_PYTHON;
+  if (configured) return configured;
+  const venv = path.join(workerDir, '.venv', 'bin', 'python');
+  return fs.existsSync(venv) ? venv : null;
 }
 
 function defaultWebDir(): string {
@@ -51,6 +74,7 @@ function defaultWebDir(): string {
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
   const musicDir = process.env.JULIANIFY_MUSIC_DIR;
+  const workerDir = path.resolve(envString('JULIANIFY_WORKER_DIR', path.join(appRoot(), 'worker')));
   const config: Config = {
     host: envString('JULIANIFY_HOST', '0.0.0.0'),
     port: envInt('JULIANIFY_PORT', 8080),
@@ -64,6 +88,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     adminUser: process.env.JULIANIFY_ADMIN_USER || null,
     adminPassword: process.env.JULIANIFY_ADMIN_PASSWORD || null,
     logLevel: envString('JULIANIFY_LOG_LEVEL', 'info'),
+    workerPython: defaultWorkerPython(workerDir),
+    workerDir,
+    workerTimeoutMin: envInt('JULIANIFY_WORKER_TIMEOUT_MIN', 120),
     ...overrides,
   };
   config.dataDir = path.resolve(config.dataDir);
@@ -78,6 +105,9 @@ export interface DataPaths {
   audioDir: string;
   peaksDir: string;
   tmpDir: string;
+  /** Modelli e cache del worker Python. */
+  modelsDir: string;
+  cacheDir: string;
 }
 
 export function dataPaths(config: Config): DataPaths {
@@ -87,5 +117,7 @@ export function dataPaths(config: Config): DataPaths {
     audioDir: path.join(config.dataDir, 'audio'),
     peaksDir: path.join(config.dataDir, 'peaks'),
     tmpDir: path.join(config.dataDir, 'tmp'),
+    modelsDir: path.join(config.dataDir, 'models'),
+    cacheDir: path.join(config.dataDir, 'cache'),
   };
 }

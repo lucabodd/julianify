@@ -9,3 +9,8 @@ data/
 web/public/font/
 web/public/soundfont/
 .DS_Store
+
+# ambiente Python del worker
+worker/.venv/
+__pycache__/
+*.pyc
