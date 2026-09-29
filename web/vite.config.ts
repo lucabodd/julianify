@@ -8,7 +8,8 @@ const backend = process.env.JULIANIFY_DEV_BACKEND ?? 'http://127.0.0.1:8080';
 
 export default defineConfig({
   root,
-  plugins: [react(), alphaTab()],
+  // Lo spartito non suona (c'è la traccia audio): il worklet del sintetizzatore non serve.
+  plugins: [react(), alphaTab({ audioWorklets: false })],
   build: {
     outDir: fileURLToPath(new URL('../dist/web', import.meta.url)),
     emptyOutDir: true,

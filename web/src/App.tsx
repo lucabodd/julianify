@@ -1,14 +1,17 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useState } from 'react';
 import type { ServerInfo, User } from '../../shared/types';
 import { ApiError, api, onUnauthorized } from './api';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Icon } from './components/Icon';
 import { Modal } from './components/Modal';
 import { Toasts, notify, notifyError } from './components/toast';
 import { AdminPage } from './pages/AdminPage';
 import { LibraryPage } from './pages/LibraryPage';
 import { LoginPage } from './pages/LoginPage';
-import { PlayerPage } from './pages/PlayerPage';
 import { navigate, useRoute } from './router';
+
+// Il player (con alphaTab) viene caricato solo quando si apre uno spartito.
+const PlayerPage = lazy(() => import('./pages/PlayerPage').then((m) => ({ default: m.PlayerPage })));
 
 interface Session {
   user: User;
@@ -59,7 +62,11 @@ export function App() {
   return (
     <SessionContext.Provider value={{ user, info, logout }}>
       {route.name === 'score' ? (
-        <PlayerPage key={route.id} scoreId={route.id} />
+        <ErrorBoundary label="Errore nel player">
+          <Suspense fallback={<div className="splash">Caricamento del player…</div>}>
+            <PlayerPage key={route.id} scoreId={route.id} />
+          </Suspense>
+        </ErrorBoundary>
       ) : (
         <div className="page">
           <TopBar />

@@ -116,6 +116,55 @@ export function registerNotesRoutes(app: FastifyInstance, ctx: AppContext): void
     return { annotation: toAnnotation(ctx.db.get<AnnotationRow>('SELECT * FROM annotations WHERE id = ?', lastInsertRowid)!) };
   });
 
+  // Inserimento in blocco (sigle importate dallo spartito o riconosciute dalle note).
+  app.post('/api/scores/:id/annotations/bulk', { bodyLimit: 4 * 1024 * 1024 }, async (request) => {
+    const user = requireUser(request);
+    const score = getVisibleScore(ctx, user, parseId((request.params as { id: string }).id));
+    const data = body(request);
+    if (!Array.isArray(data.annotations) || data.annotations.length > 5000) throw badRequest('Elenco non valido');
+    const inputs = (data.annotations as unknown[]).map((item) => {
+      if (!item || typeof item !== 'object') throw badRequest('Elemento non valido');
+      const a = item as Record<string, unknown>;
+      return {
+        barIndex: integer(a.barIndex, 'barIndex', 0, 100_000),
+        position: finiteNumber(a.position ?? 0, 'position', 0, 1),
+        kind: parseKind(a.kind),
+        text: requiredString(a.text, 'text', 2000),
+        analysis: optionalString(a.analysis, 'analysis', 100) ?? null,
+        color: parseColor(a.color) ?? null,
+      };
+    });
+    const ids = ctx.db.transaction(() =>
+      inputs.map(
+        (a) =>
+          ctx.db.run(
+            `INSERT INTO annotations (score_id, user_id, bar_index, position, kind, text, analysis, color)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            score.id,
+            user.id,
+            a.barIndex,
+            a.position,
+            a.kind,
+            a.text,
+            a.analysis,
+            a.color,
+          ).lastInsertRowid,
+      ),
+    );
+    const rows = ids.map((id) => ctx.db.get<AnnotationRow>('SELECT * FROM annotations WHERE id = ?', id)!);
+    return { annotations: rows.map(toAnnotation) };
+  });
+
+  app.delete('/api/scores/:id/annotations', async (request) => {
+    const user = requireUser(request);
+    const score = getVisibleScore(ctx, user, parseId((request.params as { id: string }).id));
+    const { kind } = request.query as { kind?: string };
+    const { changes } = kind
+      ? ctx.db.run('DELETE FROM annotations WHERE score_id = ? AND user_id = ? AND kind = ?', score.id, user.id, parseKind(kind))
+      : ctx.db.run('DELETE FROM annotations WHERE score_id = ? AND user_id = ?', score.id, user.id);
+    return { deleted: changes };
+  });
+
   app.patch('/api/annotations/:id', async (request) => {
     const user = requireUser(request);
     const id = parseId((request.params as { id: string }).id);

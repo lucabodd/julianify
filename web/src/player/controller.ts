@@ -80,12 +80,20 @@ export class PlayerController {
   private destroyed = false;
   /** Pausa (ms) tra una ripetizione e l'altra del loop. */
   loopGapMs = 0;
+  /**
+   * Latenza dell'uscita audio (ms), es. cuffie Bluetooth: il cursore viene ritardato
+   * di questo valore per coincidere con ciò che si sente.
+   */
+  latencyMs = 0;
   private gapTimer = 0;
 
   constructor(host: HTMLElement, scrollElement: HTMLElement) {
     this.audio = new Audio();
     this.audio.preload = 'auto';
     this.audio.preservesPitch = true;
+    this.audio.className = 'player-audio';
+    this.audio.hidden = true;
+    document.body.appendChild(this.audio);
 
     this.api = new alphaTab.AlphaTabApi(host, {
       core: {
@@ -99,7 +107,9 @@ export class PlayerController {
         staveProfile: alphaTab.StaveProfile.Default,
         scale: 1,
         systemPaddingTop: 44,
+        firstSystemPaddingTop: 44,
         systemPaddingBottom: 26,
+        lastSystemPaddingBottom: 32,
       },
       notation: {
         rhythmMode: alphaTab.TabRhythmMode.ShowWithBars,
@@ -191,7 +201,7 @@ export class PlayerController {
       seekTo: (time: number) => {
         if (!Number.isFinite(time)) return;
         const duration = Number.isFinite(audio.duration) ? audio.duration : Infinity;
-        audio.currentTime = Math.max(0, Math.min(duration, time / 1000));
+        audio.currentTime = Math.max(0, Math.min(duration, (time + this.latencyMs) / 1000));
       },
       play: () => {
         if (!audio.src) return;
@@ -209,7 +219,12 @@ export class PlayerController {
   }
 
   private pushPosition(): void {
-    this.output?.updatePosition(this.audio.currentTime * 1000);
+    this.output?.updatePosition(Math.max(0, this.audio.currentTime * 1000 - this.latencyMs));
+  }
+
+  setLatency(ms: number): void {
+    this.latencyMs = Math.max(0, Math.min(1000, ms));
+    this.pushPosition();
   }
 
   private startUpdateLoop(): void {
@@ -246,7 +261,7 @@ export class PlayerController {
       this.startUpdateLoop();
     });
     on('pause', () => {
-      if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.api.pause();
+      this.pauseAlphaTab();
       this.pushPosition();
       this.update({ playing: false, audioTimeMs: audio.currentTime * 1000 });
     });
@@ -261,7 +276,7 @@ export class PlayerController {
       }
     });
     on('ended', () => {
-      if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.api.pause();
+      this.pauseAlphaTab();
       this.update({ playing: false });
     });
     on('ratechange', () => this.update({ speed: audio.playbackRate }));
@@ -395,8 +410,21 @@ export class PlayerController {
 
   pause(): void {
     window.clearTimeout(this.gapTimer);
-    if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.api.pause();
+    this.pauseAlphaTab();
     if (!this.audio.paused) this.audio.pause();
+  }
+
+  /**
+   * Mette in pausa alphaTab lasciando l'audio dove si trova: alphaTab di suo riporta
+   * il cursore all'inizio del beat corrente (e alla sua prima esecuzione, anche se si
+   * è nel secondo giro di un ritornello), spostando anche la traccia audio.
+   */
+  private pauseAlphaTab(): void {
+    if (this.api.playerState !== alphaTab.synth.PlayerState.Playing) return;
+    const time = this.audio.currentTime;
+    this.api.pause();
+    if (Math.abs(this.audio.currentTime - time) > 0.0005) this.audio.currentTime = time;
+    this.pushPosition();
   }
 
   togglePlay(): void {
@@ -423,6 +451,8 @@ export class PlayerController {
   setSpeed(speed: number): void {
     const value = Math.max(0.25, Math.min(2, speed));
     this.api.playbackSpeed = value;
+    // defaultPlaybackRate sopravvive al cambio di sorgente dell'elemento audio.
+    this.audio.defaultPlaybackRate = value;
     this.audio.playbackRate = value;
     this.update({ speed: value });
   }
@@ -488,7 +518,10 @@ export class PlayerController {
     this.applySyncPoints(this.syncPoints);
   }
 
-  setDisplay(options: { scale?: number; layout?: LayoutName; staveProfile?: StaveProfileName; followCursor?: boolean }): void {
+  setDisplay(
+    options: { scale?: number; layout?: LayoutName; staveProfile?: StaveProfileName; followCursor?: boolean },
+    render = true,
+  ): void {
     const s = this.api.settings;
     if (options.scale !== undefined) s.display.scale = options.scale;
     if (options.layout !== undefined) {
@@ -499,16 +532,28 @@ export class PlayerController {
       s.player.scrollMode = options.followCursor ? alphaTab.ScrollMode.Continuous : alphaTab.ScrollMode.Off;
     }
     this.api.updateSettings();
-    this.api.render();
+    if (render && this.api.score) this.api.render();
   }
 
-  setPadding(top: number, bottom: number): void {
+  /** Mostra o nasconde le sigle scritte nel file (per non duplicare quelle dell'analisi). */
+  setScoreChordNames(show: boolean, render = true): void {
+    const elements = this.api.settings.notation.elements;
+    if ((elements.get(alphaTab.NotationElement.EffectChordNames) ?? true) === show) return;
+    elements.set(alphaTab.NotationElement.EffectChordNames, show);
+    this.api.updateSettings();
+    if (render && this.api.score) this.api.render();
+  }
+
+  setPadding(top: number, bottom: number, render = true): void {
     const d = this.api.settings.display;
     if (d.systemPaddingTop === top && d.systemPaddingBottom === bottom) return;
+    // Il primo e l'ultimo sistema usano impostazioni proprie (che sostituiscono le altre).
     d.systemPaddingTop = top;
+    d.firstSystemPaddingTop = top;
     d.systemPaddingBottom = bottom;
+    d.lastSystemPaddingBottom = bottom + 6;
     this.api.updateSettings();
-    this.api.render();
+    if (render && this.api.score) this.api.render();
   }
 
   destroy(): void {
@@ -517,6 +562,7 @@ export class PlayerController {
     cancelAnimationFrame(this.raf);
     this.audio.pause();
     this.audio.removeAttribute('src');
+    this.audio.remove();
     this.disposers.forEach((d) => d());
     this.api.destroy();
     this.listeners.clear();

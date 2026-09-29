@@ -246,6 +246,43 @@ describe('API Julianify', () => {
     assert.equal(foreign.statusCode, 404);
   });
 
+  it('inserisce ed elimina note in blocco', async () => {
+    const bulk = await app.inject({
+      method: 'POST',
+      url: `/api/scores/${scoreId}/annotations/bulk`,
+      headers: as('luca'),
+      payload: {
+        annotations: [
+          { barIndex: 0, position: 0, kind: 'chord', text: 'Dm9' },
+          { barIndex: 1, position: 0, kind: 'chord', text: 'G13' },
+          { barIndex: 0, position: 0, kind: 'key', text: 'C' },
+        ],
+      },
+    });
+    assert.equal(bulk.statusCode, 200, bulk.body);
+    assert.equal(bulk.json().annotations.length, 3);
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: `/api/scores/${scoreId}/annotations/bulk`,
+      headers: as('luca'),
+      payload: { annotations: [{ barIndex: 0, position: 0, kind: 'boh', text: 'x' }] },
+    });
+    assert.equal(invalid.statusCode, 400);
+
+    const del = await app.inject({ method: 'DELETE', url: `/api/scores/${scoreId}/annotations?kind=chord`, headers: as('luca') });
+    assert.equal(del.json().deleted, 3); // Am7 creato prima + Dm9 + G13
+    const left = await app.inject({ method: 'GET', url: `/api/scores/${scoreId}/annotations`, headers: as('luca') });
+    assert.deepEqual(left.json().annotations.map((a: { kind: string }) => a.kind), ['key']);
+    await app.inject({ method: 'DELETE', url: `/api/scores/${scoreId}/annotations?kind=key`, headers: as('luca') });
+    await app.inject({
+      method: 'POST',
+      url: `/api/scores/${scoreId}/annotations`,
+      headers: as('luca'),
+      payload: { barIndex: 3, position: 0.5, kind: 'chord', text: 'Am7' },
+    });
+  });
+
   it('condivide uno spartito in sola lettura', async () => {
     const shared = await app.inject({ method: 'PATCH', url: `/api/scores/${scoreId}`, headers: as('luca'), payload: { shared: true } });
     assert.equal(shared.json().score.shared, true);
