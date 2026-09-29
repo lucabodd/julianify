@@ -58,11 +58,21 @@ export async function buildApp(config: Config, options: { logger?: boolean } = {
 
   let library: MusicLibrary | null = null;
   if (config.musicDir) {
-    if (fs.existsSync(config.musicDir) && fs.statSync(config.musicDir).isDirectory()) {
-      library = new MusicLibrary(config.musicDir);
-    } else {
-      console.warn(`[julianify] JULIANIFY_MUSIC_DIR non trovata: ${config.musicDir} (libreria musicale disattivata)`);
+    let problem: string | null = null;
+    try {
+      if (!fs.statSync(config.musicDir).isDirectory()) problem = 'non è una cartella';
+      else fs.accessSync(config.musicDir, fs.constants.R_OK | fs.constants.X_OK);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      problem =
+        code === 'ENOENT'
+          ? 'non trovata'
+          : code === 'EACCES'
+            ? "non leggibile dall'utente del servizio (permessi? in un LXC non privilegiato i file devono essere leggibili da tutti)"
+            : String(code ?? err);
     }
+    if (problem) console.warn(`[julianify] Libreria musicale disattivata: ${config.musicDir} ${problem}`);
+    else library = new MusicLibrary(config.musicDir);
   }
 
   const ctx: AppContext = {

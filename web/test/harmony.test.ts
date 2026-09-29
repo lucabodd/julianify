@@ -82,6 +82,15 @@ describe('parseChord', () => {
     assert.equal(parseChord('xyz'), null);
   });
 
+  it('mette tra parentesi le tensioni dopo un numero', () => {
+    const shape = parseChord('C6')!;
+    shape.tensions.add('11');
+    assert.equal(chordSuffix(shape), '6(11)');
+    const minor = parseChord('Em')!;
+    minor.tensions.add('b13');
+    assert.equal(chordSuffix(minor), 'm(b13)');
+  });
+
   it('ricostruisce il suffisso', () => {
     for (const s of ['m7', 'maj7', '7', 'm7b5', 'dim7', '9', '13', 'maj9', 'm9', 'm11', '7alt', '7b9', '9sus4', 'maj7#11', 'm(maj7)', '6/9', '7#5']) {
       assert.equal(chordSuffix(parseChord(`C${s}`)!), s, s);
@@ -174,6 +183,10 @@ describe('analisi funzionale', () => {
     const lyd = analyze(C_MAJOR, 'Cmaj7#11')[0]!;
     assert.equal(lyd.roman, 'Imaj7♯11');
     assert.equal(lyd.scale, 'lidia');
+    // la #11 è un colore della tonica, non un prestito
+    assert.equal(lyd.category, 'diatonic');
+    assert.equal(lyd.func, 'T');
+    assert.equal(analyze(C_MAJOR, 'G7b9')[0]!.category, 'diatonic');
     const alt = analyze(C_MAJOR, 'G7alt', 'Cmaj7')[0]!;
     assert.equal(alt.roman, 'V7alt');
     assert.equal(alt.scale, 'alterata (superlocria)');

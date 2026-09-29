@@ -1,0 +1,23 @@
+# Avvio con Docker (in una VM o in un LXC con Docker):
+#   docker compose up -d --build
+# poi apri http://<ip-del-server>:8080
+services:
+  julianify:
+    build: .
+    container_name: julianify
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Libreria musicale in sola lettura (vedi il volume qui sotto).
+      JULIANIFY_MUSIC_DIR: /music
+      # Primo avvio: crea l'amministratore se non esiste ancora nessun utente.
+      # Dopo il primo accesso puoi togliere queste due righe.
+      JULIANIFY_ADMIN_USER: ${JULIANIFY_ADMIN_USER:-luca}
+      JULIANIFY_ADMIN_PASSWORD: ${JULIANIFY_ADMIN_PASSWORD:?imposta JULIANIFY_ADMIN_PASSWORD nel file .env}
+      # Dietro un reverse proxy HTTPS:
+      # JULIANIFY_TRUST_PROXY: "true"
+      # JULIANIFY_COOKIE_SECURE: "true"
+    volumes:
+      - ./data:/data
+      - /mnt/data/music:/music:ro

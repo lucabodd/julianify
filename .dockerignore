@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+.git
+web/public/font
+web/public/soundfont
+*.db
+*.db-wal
+*.db-shm
+.env

@@ -135,7 +135,7 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
         )}
         {browsing && (
           <LibraryBrowser
-            initialQuery={[score.artist, score.title].filter(Boolean).join(' ')}
+            initialQueries={[score.title, score.artist ?? ''].filter((q) => q.trim().length > 1)}
             onPick={async (entry) => {
               try {
                 const audio = await api.linkLibraryAudio(score.id, entry.path);
@@ -170,9 +170,9 @@ export function AudioTracksDialog({ score, activeAudioId, onClose, onChanged }: 
   );
 }
 
-function LibraryBrowser({ initialQuery, onPick }: { initialQuery: string; onPick: (entry: LibraryEntry) => void }) {
+function LibraryBrowser({ initialQueries, onPick }: { initialQueries: string[]; onPick: (entry: LibraryEntry) => void }) {
   const [path, setPath] = useState('');
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [truncated, setTruncated] = useState(false);
@@ -202,6 +202,26 @@ function LibraryBrowser({ initialQuery, onPick }: { initialQuery: string; onPick
       window.clearTimeout(timer);
     };
   }, [path, query]);
+
+  // All'apertura prova a cercare il titolo, poi l'artista; se non trova nulla mostra le cartelle.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const q of initialQueries) {
+        const res = await api.searchLibrary(q).catch(() => null);
+        if (cancelled) return;
+        if (res && res.entries.length > 0) {
+          setQuery(q);
+          return;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // solo all'apertura
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (preview && previewRef.current) void previewRef.current.play().catch(() => undefined);

@@ -297,39 +297,47 @@ export function parseChord(symbol: string): ParsedChord | null {
   return { ...shape, root, bass, symbol: symbol.trim() };
 }
 
+/**
+ * Aggiunge le tensioni a un suffisso: le alterazioni seguono direttamente una settima
+ * ("7b9", "maj7#11"), altrimenti vanno tra parentesi ("6(11)", "m(b13)", "dim(9)").
+ */
+function withTensions(base: string, tensions: Tension[]): string {
+  if (tensions.length === 0) return base;
+  const hasSeventh = /7|9|11|13/.test(base);
+  if (hasSeventh && tensions.every((t) => !/^\d/.test(t))) return base + tensions.join('');
+  return `${base}(${tensions.join(',')})`;
+}
+
 /** Suffisso della sigla (senza fondamentale) per una struttura d'accordo. */
 export function chordSuffix(c: ChordShape): string {
   const t = c.tensions;
-  const extras = (skip: Tension[]) =>
-    TENSION_ORDER.filter((x) => t.has(x) && !skip.includes(x))
-      .map((x) => x)
-      .join('');
+  const list = (skip: Tension[]) => TENSION_ORDER.filter((x) => t.has(x) && !skip.includes(x));
 
   if (c.third === 'm' && c.fifth === 'b5') {
-    if (c.seventh === 'bb7') return `dim7${extras([])}`;
-    if (c.seventh === 'b7') return `${t.has('11') ? 'm11b5' : t.has('9') ? 'm9b5' : 'm7b5'}${extras(['9', '11'])}`;
-    return `dim${extras([])}`;
+    if (c.seventh === 'bb7') return withTensions('dim7', list([]));
+    if (c.seventh === 'b7') return withTensions(t.has('11') ? 'm11b5' : t.has('9') ? 'm9b5' : 'm7b5', list(['9', '11']));
+    return withTensions('dim', list([]));
   }
   if (c.third === 'm') {
-    if (c.seventh === 'M7') return `m(maj${t.has('9') ? '9' : '7'})${extras(['9'])}`;
+    if (c.seventh === 'M7') return withTensions(`m(maj${t.has('9') ? '9' : '7'})`, list(['9']));
     if (c.seventh === 'b7') {
       const base = t.has('13') ? 'm13' : t.has('11') ? 'm11' : t.has('9') ? 'm9' : 'm7';
       const skip: Tension[] = base === 'm13' ? ['9', '11', '13'] : base === 'm11' ? ['9', '11'] : base === 'm9' ? ['9'] : [];
-      return base + extras(skip);
+      return withTensions(base, list(skip));
     }
-    if (c.sixth) return `${t.has('9') ? 'm6/9' : 'm6'}${extras(['9'])}`;
-    if (t.has('9')) return `madd9${extras(['9'])}`;
-    return `m${extras([])}`;
+    if (c.sixth) return withTensions(t.has('9') ? 'm6/9' : 'm6', list(['9']));
+    if (t.has('9')) return withTensions('madd9', list(['9']));
+    return withTensions('m', list([]));
   }
   if (c.fifth === '#5' && c.third === 'M') {
-    if (c.seventh === 'b7') return `${t.has('9') ? '9' : '7'}#5${extras(['9'])}`;
-    if (c.seventh === 'M7') return `maj7#5${extras([])}`;
-    return `aug${extras([])}`;
+    if (c.seventh === 'b7') return withTensions(`${t.has('9') ? '9' : '7'}#5`, list(['9']));
+    if (c.seventh === 'M7') return withTensions('maj7#5', list([]));
+    return withTensions('aug', list([]));
   }
   const sus = c.third === 'sus4' ? 'sus4' : c.third === 'sus2' ? 'sus2' : '';
   if (c.seventh === 'M7') {
     const base = t.has('13') ? 'maj13' : t.has('9') ? 'maj9' : 'maj7';
-    return base + sus + extras(base === 'maj13' ? ['9', '13'] : base === 'maj9' ? ['9'] : []);
+    return withTensions(base + sus, list(base === 'maj13' ? ['9', '13'] : base === 'maj9' ? ['9'] : []));
   }
   if (c.seventh === 'b7') {
     const altered = ALTERED.filter((x) => t.has(x));
@@ -344,11 +352,11 @@ export function chordSuffix(c: ChordShape): string {
     const rest = altered.filter((x) => !skip.includes(x)).join('');
     return `${base}${sus}${fifth}${rest}${eleven}`;
   }
-  if (c.third === null) return c.fifth === 'P' && t.size === 0 && !c.sixth ? '5' : `5${extras([])}`;
-  if (c.sixth) return `${t.has('9') ? '6/9' : '6'}${sus}${extras(['9'])}`;
-  if (t.has('9') && c.third === 'M') return `add9${extras(['9'])}`;
-  if (c.fifth === 'b5') return `(b5)${sus}${extras([])}`;
-  return sus + extras([]);
+  if (c.third === null) return c.fifth === 'P' && t.size === 0 && !c.sixth ? '5' : withTensions('5', list([]));
+  if (c.sixth) return withTensions(`${t.has('9') ? '6/9' : '6'}${sus}`, list(['9']));
+  if (t.has('9') && c.third === 'M') return withTensions('add9', list(['9']));
+  if (c.fifth === 'b5') return withTensions(`(b5)${sus}`, list([]));
+  return withTensions(sus, list([]));
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +631,15 @@ function fitsDiatonic(chord: ParsedChord, key: KeyInfo, mode: Mode = key.mode): 
   const scale = modeScale(key, mode);
   const inScale = (interval: number) => scale.includes(mod12(chord.root + interval));
   if (chord.sixth && !inScale(9)) return false;
-  for (const t of chord.tensions) if (!inScale(TENSION_INTERVAL[t])) return false;
+  const dominant = chord.third === 'M' && chord.seventh === 'b7';
+  const majorType = chord.third === 'M' && chord.seventh !== 'b7';
+  for (const t of chord.tensions) {
+    // Tensioni "disponibili" per convenzione jazz: le alterazioni sulle dominanti e
+    // la #11 sugli accordi maggiori sono colori, non cambiano la funzione.
+    if (dominant && ALTERED.includes(t)) continue;
+    if (majorType && t === '#11') continue;
+    if (!inScale(TENSION_INTERVAL[t])) return false;
+  }
   return diatonicChords(mode).some((d) => {
     if (d.semis !== semis) return false;
     if ((chord.third === 'M' || chord.third === 'm') && chord.third !== d.third) return false;

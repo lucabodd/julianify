@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Lettore di spartiti/tablature (Guitar Pro, MusicXML) sincronizzato con la traccia audio originale, per esercitarsi in LAN.",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "type": "module",
   "engines": {
     "node": ">=22.13"
