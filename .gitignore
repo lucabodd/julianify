@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+# copiati dal plugin Vite di alphaTab ad ogni build
+web/public/font/
+web/public/soundfont/
+.DS_Store

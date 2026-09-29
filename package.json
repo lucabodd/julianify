@@ -1,0 +1,44 @@
+{
+  "name": "julianify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lettore di spartiti/tablature (Guitar Pro, MusicXML) sincronizzato con la traccia audio originale, per esercitarsi in LAN.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx watch --clear-screen=false server/src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:server": "tsc -p server/tsconfig.json",
+    "start": "node --disable-warning=ExperimentalWarning dist/server/src/index.js",
+    "user": "node --disable-warning=ExperimentalWarning dist/server/src/cli.js",
+    "user:dev": "tsx server/src/cli.ts",
+    "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test server/test/*.test.ts web/test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.5",
+    "fastify": "^5.12.5"
+  },
+  "devDependencies": {
+    "@coderline/alphatab": "1.8.4",
+    "@coderline/alphatab-vite": "1.8.4",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.1",
+    "wavesurfer.js": "^8.0.1"
+  }
+}
