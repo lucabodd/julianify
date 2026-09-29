@@ -42,7 +42,19 @@ const EMPTY_SNAPSHOT: PlayerSnapshot = {
   looping: false,
   range: null,
   error: null,
+  embeddedSyncPoints: 0,
+  embeddedAudio: false,
 };
+
+/** Estensione dell'audio incorporato in un file Guitar Pro 8, dai primi byte. */
+function audioExtension(bytes: Uint8Array): string {
+  const text = (start: number, length: number) => String.fromCharCode(...bytes.slice(start, start + length));
+  if (text(0, 4) === 'RIFF') return 'wav';
+  if (text(0, 4) === 'OggS') return 'ogg';
+  if (text(0, 4) === 'fLaC') return 'flac';
+  if (text(4, 4) === 'ftyp') return 'm4a';
+  return 'mp3';
+}
 
 const DEFAULT_LAYERS: LayerOptions = { chords: true, analysis: true, sections: true, intervals: false, intervalTrack: null };
 const EMPTY_SET = new Set<number>();
@@ -384,6 +396,26 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
     [controller],
   );
 
+  // Guitar Pro 8 può incorporare la registrazione e i sync point: si importano insieme.
+  const importEmbeddedAudio = useCallback(async () => {
+    const bytes = controller?.embedded.audio;
+    if (!controller || !score || !bytes) return;
+    try {
+      const ext = audioExtension(bytes);
+      const file = new File([bytes.slice()], `${score.title || 'audio'}.${ext}`, { type: `audio/${ext === 'm4a' ? 'mp4' : ext}` });
+      notify("Importo l'audio incluso nel file…");
+      let audio = await api.uploadAudio(score.id, file, `${score.title} (dal file)`);
+      if (controller.embedded.syncPoints.length > 0) {
+        audio = await api.updateAudio(audio.id, { syncPoints: controller.embedded.syncPoints });
+      }
+      setScore((s) => (s ? { ...s, audioTracks: [...s.audioTracks, audio], audioCount: s.audioCount + 1 } : s));
+      setAudioId(audio.id);
+      notify(`Traccia importata${audio.syncPoints.length ? ` con ${audio.syncPoints.length} sync point` : ''}`, 'success');
+    } catch (err) {
+      notifyError(err);
+    }
+  }, [controller, score]);
+
   // -------------------------------------------------------------- tastiera
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => undefined);
   keyHandler.current = (e: KeyboardEvent) => {
@@ -631,8 +663,13 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
                 Aggiungi la traccia audio originale per ascoltare lo spartito a tempo.
                 {!score.isOwner && ' (Solo il proprietario può aggiungerla.)'}
               </span>
+              {score.isOwner && snap.embeddedAudio && (
+                <button className="primary" onClick={() => void importEmbeddedAudio()}>
+                  <Icon name="music" /> Usa l'audio incluso nel file
+                </button>
+              )}
               {score.isOwner && (
-                <button className="primary" onClick={() => setAudioDialog(true)}>
+                <button className={snap.embeddedAudio ? '' : 'primary'} onClick={() => setAudioDialog(true)}>
                   <Icon name="upload" /> Aggiungi traccia audio
                 </button>
               )}

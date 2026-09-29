@@ -28,6 +28,10 @@ export interface PlayerSnapshot {
   looping: boolean;
   range: PlaybackRange | null;
   error: string | null;
+  /** Sync point incorporati nel file (Guitar Pro 8). */
+  embeddedSyncPoints: number;
+  /** Il file contiene la traccia audio (Guitar Pro 8). */
+  embeddedAudio: boolean;
 }
 
 type Listener = () => void;
@@ -64,7 +68,12 @@ export class PlayerController {
     looping: false,
     range: null,
     error: null,
+    embeddedSyncPoints: 0,
+    embeddedAudio: false,
   };
+  /** Sync point e audio incorporati nel file, letti al primo caricamento dello spartito. */
+  embedded: { syncPoints: FlatSyncPoint[]; audio: Uint8Array | null } = { syncPoints: [], audio: null };
+  private loadedScore: alphaTab.model.Score | null = null;
   private listeners = new Set<Listener>();
   private beatClickListeners = new Set<(click: BeatClick) => void>();
   private rangeListeners = new Set<(range: PlaybackRange | null) => void>();
@@ -290,7 +299,21 @@ export class PlayerController {
     const api = this.api;
     const add = (off: () => void) => this.disposers.push(off);
 
-    add(api.scoreLoaded.on(() => this.update({ scoreLoaded: true, error: null })));
+    add(
+      api.scoreLoaded.on((score) => {
+        // scoreLoaded arriva anche al cambio di tracce: i dati incorporati si leggono una volta.
+        if (score !== this.loadedScore) {
+          this.loadedScore = score;
+          this.embedded = { syncPoints: score.exportFlatSyncPoints(), audio: score.backingTrack?.rawAudioFile ?? null };
+        }
+        this.update({
+          scoreLoaded: true,
+          error: null,
+          embeddedSyncPoints: this.embedded.syncPoints.length,
+          embeddedAudio: !!this.embedded.audio?.length,
+        });
+      }),
+    );
     add(api.renderStarted.on(() => this.update({ rendering: true })));
     add(
       api.postRenderFinished.on(() => {

@@ -34,6 +34,7 @@ export interface SyncEditor {
   shiftAll: (deltaMs: number) => void;
   remove: (index: number) => void;
   clear: () => void;
+  replaceAll: (points: FlatSyncPoint[]) => void;
 }
 
 function samePoint(a: FlatSyncPoint, b: { barIndex: number; barOccurence: number; barPosition: number }): boolean {
@@ -66,6 +67,8 @@ export function useSyncEditor(
   const [historySize, setHistorySize] = useState(0);
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const saveStateRef = useRef(saveState);
+  saveStateRef.current = saveState;
   const audioId = audioTrack?.id ?? null;
 
   useEffect(() => {
@@ -74,6 +77,24 @@ export function useSyncEditor(
     setTapActive(false);
     history.current = [];
     setHistorySize(0);
+    // Modifiche non ancora salvate: si salvano subito se si cambia traccia, si lascia
+    // la pagina o si chiude la scheda (fetch "keepalive" sopravvive alla chiusura).
+    const flush = () => {
+      if (!audioId || !canEdit || (saveStateRef.current !== 'dirty' && saveStateRef.current !== 'error')) return;
+      saveStateRef.current = 'saved';
+      void fetch(api.audioUrl(audioId), {
+        method: 'PATCH',
+        keepalive: true,
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Julianify': '1' },
+        body: JSON.stringify({ syncPoints: pointsRef.current }),
+      }).catch(() => undefined);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
     // Si ricarica solo quando cambia la traccia, non ad ogni salvataggio.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioId]);
@@ -257,6 +278,7 @@ export function useSyncEditor(
 
   const remove = useCallback((index: number) => commit(pointsRef.current.filter((_, i) => i !== index)), [commit]);
   const clear = useCallback(() => commit([]), [commit]);
+  const replaceAll = useCallback((next: FlatSyncPoint[]) => commit(next.map((p) => ({ ...p }))), [commit]);
 
   return {
     points,
@@ -278,5 +300,6 @@ export function useSyncEditor(
     shiftAll,
     remove,
     clear,
+    replaceAll,
   };
 }

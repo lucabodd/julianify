@@ -56,6 +56,16 @@ export function SyncPanel({ controller, editor, audio, timeline, selection, late
 
       {!editor.canEdit && <p className="notice">Solo il proprietario dello spartito può modificare i sync point.</p>}
 
+      {editor.canEdit && controller.embedded.syncPoints.length > 0 && (
+        <div className="notice field-row">
+          <span>
+            Il file contiene {controller.embedded.syncPoints.length} sync point (Guitar Pro 8), validi se questa traccia è la
+            stessa registrazione usata in Guitar Pro.
+          </span>
+          <button onClick={() => editor.replaceAll(controller.embedded.syncPoints)}>Importa</button>
+        </div>
+      )}
+
       <section className="panel-section">
         <h3>
           <Icon name="tap" /> Tap durante l'ascolto

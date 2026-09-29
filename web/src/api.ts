@@ -126,6 +126,7 @@ export const api = {
   updateAudio: (id: number, data: Partial<{ name: string; syncPoints: FlatSyncPoint[]; durationMs: number }>) =>
     request<{ audio: AudioTrack }>('PATCH', `/api/audio/${id}`, data).then((r) => r.audio),
   deleteAudio: (id: number) => request<{ ok: boolean }>('DELETE', `/api/audio/${id}`),
+  audioUrl: (id: number) => `/api/audio/${id}`,
   audioStreamUrl: (id: number) => `/api/audio/${id}/stream`,
   getPeaks: (id: number) => request<WaveformPeaks>('GET', `/api/audio/${id}/peaks`),
   savePeaks: (id: number, peaks: WaveformPeaks) => request<{ ok: boolean }>('PUT', `/api/audio/${id}/peaks`, peaks),

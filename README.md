@@ -29,7 +29,9 @@ consigliate, funzione di ogni nota della melodia sull'accordo).
   - forma d'onda con i marcatori trascinabili e la griglia delle battute;
   - tabella con il tempo reale della registrazione tra un punto e l'altro (utile per
     scovare un tap sbagliato), spostamenti fini ±10 ms, annulla;
-  - compensazione della latenza audio (cuffie Bluetooth).
+  - compensazione della latenza audio (cuffie Bluetooth);
+  - con i file **Guitar Pro 8** che contengono già la traccia audio sincronizzata
+    (funzione *Audio Track* di GP8) un clic importa audio e sync point.
 - **Studio**: loop A‑B trascinando sullo spartito o con i tasti `[` `]`, loop
   salvati (con la velocità), pausa tra le ripetizioni, velocità dal 25% al 150% con
   tono invariato, allenatore di velocità (+X% ogni N giri fino all'obiettivo).
