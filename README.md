@@ -12,8 +12,9 @@ consigliate, funzione di ogni nota della melodia sull'accordo).
 
 Con il worker Python (installato di default) lo spartito si **sincronizza da solo**
 con la registrazione, e la registrazione si può **separare negli strumenti**: una
-base **senza chitarra** su cui suonare, la **chitarra isolata** per trascrivere, il
-basso da solo per l'analisi.
+base **senza chitarra** su cui suonare, una **senza voce e chitarra** per cantare e
+suonare con la band, la **chitarra isolata** per trascrivere, il basso da solo per
+l'analisi.
 
 ## Funzionalità
 
@@ -49,7 +50,8 @@ basso da solo per l'analisi.
   30‑50 ms); un brano di 5 minuti richiede 20‑40 secondi.
 - **Separazione degli strumenti** con [Demucs](https://github.com/adefossez/demucs)
   (modello a 6 sorgenti: batteria, basso, chitarra, piano, voce, altro): crea le
-  versioni *senza chitarra* (per suonare al posto del chitarrista), *solo chitarra*,
+  versioni *senza chitarra* (per suonare al posto del chitarrista), *senza voce e
+  chitarra* (resta la band: per cantare e suonare insieme), *solo chitarra*,
   *solo basso*, *basso e batteria*, *senza basso/batteria/piano/voce*. Le versioni
   condividono i sync point dell'originale e nel player si passa dall'una all'altra
   (pulsanti nella barra o tasto `V`) **senza perdere il punto** e senza fermare la
@@ -216,7 +218,8 @@ annullare e, se la pagina viene chiusa, continuano sul server.
    - Trascina i marcatori verdi sulla forma d'onda per le correzioni fini.
 4. **Tracce audio** (icona a ingranaggio accanto alla traccia) → icona *Separa gli
    strumenti* sulla registrazione: scegli le versioni (di default *Senza chitarra* e
-   *Solo chitarra*) e avvia; l'avanzamento si vede nella finestra e in alto nel
+   *Solo chitarra*; per cantare e suonare con la band spunta *Senza voce e
+   chitarra*) e avvia; l'avanzamento si vede nella finestra e in alto nel
    player. Quando sono pronte compaiono nella barra di trasporto: `V` passa
    dall'una all'altra mentre suona.
 5. **Loop**: trascina sullo spartito da una nota all'altra, rallenta con `−`, salva

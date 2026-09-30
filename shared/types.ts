@@ -47,7 +47,16 @@ export interface FlatSyncPoint {
 export type AudioSource = 'upload' | 'library';
 
 /** Versioni di una registrazione ottenute separando gli strumenti (Demucs). */
-export type AudioVariant = 'no_guitar' | 'guitar' | 'bass' | 'rhythm' | 'no_bass' | 'no_drums' | 'no_piano' | 'no_vocals';
+export type AudioVariant =
+  | 'no_guitar'
+  | 'no_vocals_guitar'
+  | 'guitar'
+  | 'bass'
+  | 'rhythm'
+  | 'no_bass'
+  | 'no_drums'
+  | 'no_piano'
+  | 'no_vocals';
 
 export interface AudioVariantInfo {
   label: string;
@@ -61,6 +70,11 @@ export const AUDIO_VARIANTS: Record<AudioVariant, AudioVariantInfo> = {
     label: 'Senza chitarra',
     description: 'La base per suonare al posto del chitarrista',
     stems: ['drums', 'bass', 'other', 'vocals', 'piano'],
+  },
+  no_vocals_guitar: {
+    label: 'Senza voce e chitarra',
+    description: 'La band da sola, per cantare e suonare insieme',
+    stems: ['drums', 'bass', 'other', 'piano'],
   },
   guitar: { label: 'Solo chitarra', description: 'Per ascoltare e trascrivere la parte', stems: ['guitar'] },
   bass: { label: 'Solo basso', description: 'Le fondamentali: utile per l\'analisi armonica', stems: ['bass'] },

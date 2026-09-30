@@ -165,6 +165,23 @@ describe('Lavori del worker (separazione e sincronizzazione)', () => {
     assert.equal((await post(audioId, ['bass'], 'mario')).statusCode, 404);
   });
 
+  it('crea la base senza voce e chitarra, per cantare e suonare con la band', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/audio/${audioId}/stems`,
+      headers: as('luca'),
+      payload: { variants: ['no_vocals_guitar'] },
+    });
+    assert.equal(res.statusCode, 202, res.body);
+    const job = await waitJob(res.json().job.id);
+    assert.equal(job.status, 'done', job.error ?? '');
+    const band = (await tracks()).find((t) => t.variant === 'no_vocals_guitar')!;
+    assert.equal(band.name, 'Registrazione · Senza voce e chitarra');
+    assert.equal(band.parentId, audioId);
+    const stream = await app.inject({ method: 'GET', url: `/api/audio/${band.id}/stream`, headers: as('luca') });
+    assert.equal(stream.body, 'fLaC finto: drums+bass+other+piano');
+  });
+
   it('sincronizza automaticamente e conserva i punti con il lavoro', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -222,7 +239,7 @@ describe('Lavori del worker (separazione e sincronizzazione)', () => {
     assert.equal(del.statusCode, 200);
     const job = await waitJob(id);
     assert.equal(job.status, 'canceled');
-    assert.equal((await tracks()).length, 3);
+    assert.equal((await tracks()).length, 4);
     await ctx.jobs.idle();
     assert.deepEqual(fs.readdirSync(ctx.storage.paths.tmpDir), []);
   });
@@ -230,7 +247,7 @@ describe('Lavori del worker (separazione e sincronizzazione)', () => {
   it('elenca i lavori recenti dello spartito', async () => {
     const res = await app.inject({ method: 'GET', url: `/api/scores/${scoreId}/jobs`, headers: as('luca') });
     const kinds = res.json().jobs.map((j: Job) => `${j.kind}:${j.status}`);
-    assert.deepEqual(kinds, ['stems:canceled', 'autosync:error', 'autosync:done', 'stems:done']);
+    assert.deepEqual(kinds, ['stems:canceled', 'autosync:error', 'autosync:done', 'stems:done', 'stems:done']);
     const other = await app.inject({ method: 'GET', url: `/api/jobs/${res.json().jobs[0].id}`, headers: as('mario') });
     assert.equal(other.statusCode, 404);
   });
@@ -248,7 +265,7 @@ describe('Lavori del worker (separazione e sincronizzazione)', () => {
   });
 
   it("elimina le versioni insieme all'originale", async () => {
-    assert.equal(fs.readdirSync(ctx.storage.paths.audioDir).length, 3);
+    assert.equal(fs.readdirSync(ctx.storage.paths.audioDir).length, 4);
     const res = await app.inject({ method: 'DELETE', url: `/api/audio/${audioId}`, headers: as('luca') });
     assert.equal(res.statusCode, 200);
     assert.deepEqual(await tracks(), []);

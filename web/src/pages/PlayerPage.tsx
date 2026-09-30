@@ -8,6 +8,7 @@ import {
   type SavedLoop,
   type ScoreDetail,
   type ScorePrefs,
+  type StemsJobParams,
 } from '../../../shared/types';
 import { api } from '../api';
 import { useSession } from '../App';
@@ -290,7 +291,11 @@ export function PlayerPage({ scoreId }: { scoreId: number }) {
             (fresh) => setScore((s) => (s ? { ...s, audioTracks: fresh.audioTracks, audioCount: fresh.audioCount } : fresh)),
             notifyError,
           );
-          notify('Versioni pronte: scegli «Senza chitarra» o le altre nella barra in alto (tasto V)', 'success');
+          const names = ((job.params as StemsJobParams | null)?.variants ?? [])
+            .map((v) => AUDIO_VARIANTS[v]?.label)
+            .filter(Boolean)
+            .join(', ');
+          notify(`Versioni pronte${names ? `: ${names}` : ''}. Le trovi nella barra in alto (tasto V)`, 'success');
         } else if (job.status === 'error') {
           notify(`Separazione non riuscita: ${job.error}`, 'error');
         }
